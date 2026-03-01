@@ -16,7 +16,6 @@ interface RegionOcrOverlayProps {
     offsetY: number;
   } | null;
   naturalDimensions: { width: number; height: number } | null;
-  userToken: string | null;
 }
 
 interface SelectionRect {
@@ -30,7 +29,6 @@ export const RegionOcrOverlay: FC<RegionOcrOverlayProps> = ({
   frameId,
   renderedImageInfo,
   naturalDimensions,
-  userToken,
 }) => {
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(
@@ -46,7 +44,11 @@ export const RegionOcrOverlay: FC<RegionOcrOverlayProps> = ({
       if (e.key === "Shift") setShiftHeld(true);
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Shift") setShiftHeld(false);
+      if (e.key === "Shift") {
+        setShiftHeld(false);
+        // If user releases shift without completing a drag, clear selection
+        if (!isSelecting) setSelectionRect(null);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -54,7 +56,7 @@ export const RegionOcrOverlay: FC<RegionOcrOverlayProps> = ({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, []);
+  }, [isSelecting]);
 
   const clamp = useCallback(
     (x: number, y: number): { x: number; y: number } => {
@@ -93,16 +95,6 @@ export const RegionOcrOverlay: FC<RegionOcrOverlayProps> = ({
         return;
       }
 
-      if (!userToken) {
-        toast({
-          title: "login required",
-          description: "login required for region OCR",
-          variant: "destructive",
-        });
-        setSelectionRect(null);
-        return;
-      }
-
       setIsProcessing(true);
       toast({ title: "reading text...", description: "analyzing selected region" });
 
@@ -118,7 +110,6 @@ export const RegionOcrOverlay: FC<RegionOcrOverlayProps> = ({
         const cropH = Math.round(height * scaleY);
 
         // Fetch frame from local HTTP server as blob to avoid cross-origin canvas tainting
-        // (Tauri asset protocol URLs taint the canvas, blocking toDataURL)
         const frameResp = await fetch(
           `http://localhost:3030/frames/${frameId}`
         );
@@ -145,63 +136,24 @@ export const RegionOcrOverlay: FC<RegionOcrOverlayProps> = ({
         ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
         URL.revokeObjectURL(blobUrl);
 
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
-        const base64 = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
+        const dataUrl = canvas.toDataURL("image/png");
+        const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
 
-        // Call screenpipe cloud API
-        const response = await fetch(
-          "https://api.screenpi.pe/v1/chat/completions",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${userToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "claude-haiku-4-5",
-              max_tokens: 4096,
-              messages: [
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "image_url",
-                      image_url: {
-                        url: `data:image/jpeg;base64,${base64}`,
-                      },
-                    },
-                    {
-                      type: "text",
-                      text: "Extract all text from this image. Return ONLY the extracted text, preserving the original formatting and line breaks. Do not add any commentary.",
-                    },
-                  ],
-                },
-              ],
-            }),
-          }
-        );
+        // Use local OCR (Apple Vision / Windows Native / Tesseract)
+        const extractedText: string = await invoke("perform_ocr_on_image", {
+          imageBase64: base64,
+        });
 
-        if (!response.ok) {
-          const errText = await response.text().catch(() => "unknown error");
-          throw new Error(`API error ${response.status}: ${errText}`);
-        }
-
-        const data = await response.json();
-        const extractedText = data?.choices?.[0]?.message?.content?.trim();
-
-        if (!extractedText) {
+        const trimmed = extractedText.trim();
+        if (!trimmed) {
           toast({
             title: "no text found",
             description: "no text was detected in the selected region",
           });
         } else {
-          // Use native Tauri clipboard — navigator.clipboard.writeText() fails
-          // after async operations because user activation is lost
-          await invoke("copy_text_to_clipboard", { text: extractedText });
+          await invoke("copy_text_to_clipboard", { text: trimmed });
           const preview =
-            extractedText.length > 120
-              ? extractedText.slice(0, 120) + "..."
-              : extractedText;
+            trimmed.length > 120 ? trimmed.slice(0, 120) + "..." : trimmed;
           toast({
             title: "text copied to clipboard",
             description: preview,
@@ -220,7 +172,7 @@ export const RegionOcrOverlay: FC<RegionOcrOverlayProps> = ({
         setSelectionRect(null);
       }
     },
-    [frameId, renderedImageInfo, naturalDimensions, userToken]
+    [frameId, renderedImageInfo, naturalDimensions]
   );
 
   const onMouseDown = useCallback(
