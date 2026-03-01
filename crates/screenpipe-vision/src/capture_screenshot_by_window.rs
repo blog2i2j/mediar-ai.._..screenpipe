@@ -876,7 +876,7 @@ fn get_all_windows() -> Result<Vec<WindowData>, Box<dyn Error>> {
     Ok(windows
         .into_iter()
         .filter_map(|window| {
-            let mut app_name = match window.app_name() {
+            let app_name = match window.app_name() {
                 Ok(name) => name.to_string(),
                 Err(e) => {
                     debug!("Failed to get app_name for window: {}", e);
