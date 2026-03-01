@@ -174,8 +174,8 @@ impl DatabaseManager {
         let pool = SqlitePoolOptions::new()
             // Pool handles both read and write concurrency. Writes are serialized
             // by SQLite's WAL mode + busy_timeout(5s).
-            .max_connections(10)
-            .min_connections(3) // Minimum number of idle connections
+            .max_connections(30)
+            .min_connections(5) // Minimum number of idle connections
             .acquire_timeout(Duration::from_secs(10))
             .connect_with(connect_options)
             .await?;
