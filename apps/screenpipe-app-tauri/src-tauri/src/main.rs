@@ -1209,6 +1209,9 @@ async fn main() {
                 // Shortcut reminder commands
                 commands::show_shortcut_reminder,
                 commands::hide_shortcut_reminder,
+                // Notification panel commands
+                commands::show_notification_panel,
+                commands::hide_notification_panel,
                 // Window-specific shortcut commands (dynamic registration)
                 commands::register_window_shortcuts,
                 commands::unregister_window_shortcuts,
@@ -1431,6 +1434,9 @@ async fn main() {
             // Shortcut reminder commands
             commands::show_shortcut_reminder,
             commands::hide_shortcut_reminder,
+            // Notification panel commands
+            commands::show_notification_panel,
+            commands::hide_notification_panel,
             // Window-specific shortcut commands (dynamic registration)
             commands::register_window_shortcuts,
             commands::unregister_window_shortcuts,

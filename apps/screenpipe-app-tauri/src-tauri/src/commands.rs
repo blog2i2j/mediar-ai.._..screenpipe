@@ -500,11 +500,9 @@ pub async fn show_window(
     Ok(())
 }
 
-/// Re-assert the WKWebView as first responder for the current key window/panel.
-/// Called from JS on window focus, pointer enter, and periodically by a focus
-/// watchdog to recover from silent WKWebView focus loss (tao#208, tauri#11897).
-/// Handles both NSPanel-based windows (main overlay, chat) and regular NSWindows
-/// (settings) so keyboard input works reliably across all window types.
+/// Re-assert the WKWebView as first responder for the current key panel.
+/// Called from JS on pointer enter / window focus to ensure trackpad pinch
+/// gestures (magnifyWithEvent:) reach the WKWebView for zoom handling.
 #[tauri::command]
 #[specta::specta]
 pub async fn ensure_webview_focus(app_handle: tauri::AppHandle) -> Result<(), String> {
@@ -515,23 +513,9 @@ pub async fn ensure_webview_focus(app_handle: tauri::AppHandle) -> Result<(), St
 
         let app = app_handle.clone();
         run_on_main_thread_safe(&app_handle, move || {
-            // Try NSPanel-based windows first (main overlay, chat)
-            for label in &["main", "main-window", "chat"] {
+            for label in &["main", "main-window"] {
                 if let Ok(panel) = app.get_webview_panel(label) {
                     unsafe { crate::window_api::make_webview_first_responder(&panel); }
-                    return;
-                }
-            }
-            // Fall back to regular NSWindow (settings, etc.)
-            for label in &["settings"] {
-                if let Some(window) = app.get_webview_window(label) {
-                    if let Ok(ns_win) = window.ns_window() {
-                        unsafe {
-                            crate::window_api::make_nswindow_webview_first_responder(
-                                ns_win as tauri_nspanel::cocoa::base::id,
-                            );
-                        }
-                    }
                     return;
                 }
             }
@@ -896,6 +880,187 @@ pub async fn show_shortcut_reminder(
 #[specta::specta]
 pub async fn hide_shortcut_reminder(app_handle: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("shortcut-reminder") {
+        let _ = window.hide();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn show_notification_panel(
+    app_handle: tauri::AppHandle,
+    payload: String,
+) -> Result<(), String> {
+    use tauri::{Emitter, WebviewWindowBuilder};
+
+    let label = "notification-panel";
+
+    info!("show_notification_panel called");
+
+    let window_width = 320.0;
+    let window_height = 180.0;
+
+    // Position at top-right of the screen where the cursor is
+    let (x, y) = {
+        #[cfg(target_os = "macos")]
+        {
+            use tauri_nspanel::cocoa::appkit::{NSEvent, NSScreen};
+            use tauri_nspanel::cocoa::base::{id, nil};
+            use tauri_nspanel::cocoa::foundation::{NSArray, NSPoint, NSRect};
+            unsafe {
+                let mouse: NSPoint = NSEvent::mouseLocation(nil);
+                let screens: id = NSScreen::screens(nil);
+                let count: u64 = NSArray::count(screens);
+                let mut x = 0.0_f64;
+                let mut y = 12.0_f64;
+                for i in 0..count {
+                    let screen: id = NSArray::objectAtIndex(screens, i);
+                    let frame: NSRect = NSScreen::frame(screen);
+                    if mouse.x >= frame.origin.x
+                        && mouse.x < frame.origin.x + frame.size.width
+                        && mouse.y >= frame.origin.y
+                        && mouse.y < frame.origin.y + frame.size.height
+                    {
+                        x = frame.origin.x + frame.size.width - window_width - 16.0;
+                        y = 12.0;
+                        break;
+                    }
+                }
+                (x, y)
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let monitor = app_handle
+                .primary_monitor()
+                .map_err(|e| e.to_string())?
+                .ok_or("No primary monitor found")?;
+            let screen_size = monitor.size();
+            let scale_factor = monitor.scale_factor();
+            let x = (screen_size.width as f64 / scale_factor) - window_width - 16.0;
+            (x, 12.0)
+        }
+    };
+
+    // If window exists, reposition to current screen and show
+    if let Some(window) = app_handle.get_webview_window(label) {
+        info!("notification-panel window exists, repositioning and showing");
+        let _ = window.set_position(tauri::Position::Logical(
+            tauri::LogicalPosition::new(x, y),
+        ));
+        let _ = app_handle.emit_to(label, "notification-panel-update", &payload);
+        let _ = window.show();
+
+        #[cfg(target_os = "macos")]
+        {
+            use tauri_nspanel::ManagerExt;
+            let app_clone = app_handle.clone();
+            let _ = app_handle.run_on_main_thread(move || {
+                if let Ok(panel) = app_clone.get_webview_panel("notification-panel") {
+                    use tauri_nspanel::cocoa::appkit::NSWindowCollectionBehavior;
+                    panel.set_level(1001);
+                    panel.set_style_mask(128);
+                    panel.set_hides_on_deactivate(false);
+                    panel.set_collection_behaviour(
+                        NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
+                            | NSWindowCollectionBehavior::NSWindowCollectionBehaviorIgnoresCycle
+                            | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary,
+                    );
+                    panel.order_front_regardless();
+                }
+            });
+        }
+        return Ok(());
+    }
+
+    info!("Creating new notification-panel window");
+    #[allow(unused_mut)]
+    let mut builder = WebviewWindowBuilder::new(
+        &app_handle,
+        label,
+        tauri::WebviewUrl::App("notification-panel".into()),
+    )
+    .title("")
+    .inner_size(window_width, window_height)
+    .position(x, y)
+    .visible_on_all_workspaces(true)
+    .always_on_top(true)
+    .decorations(false)
+    .skip_taskbar(true)
+    .focused(false)
+    .transparent(true)
+    .visible(false)
+    .shadow(false)
+    .resizable(false);
+
+    let window = builder
+        .build()
+        .map_err(|e| format!("Failed to create notification panel window: {}", e))?;
+
+    info!("notification-panel window created");
+
+    // Convert to NSPanel on macOS for fullscreen support
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_nspanel::WebviewWindowExt;
+
+        if let Ok(_panel) = window.to_panel() {
+            info!("Successfully converted notification-panel to panel");
+
+            let _ = window.show();
+
+            let window_clone = window.clone();
+            let _ = app_handle.run_on_main_thread(move || {
+                use tauri_nspanel::cocoa::appkit::NSWindowCollectionBehavior;
+
+                if let Ok(panel) = window_clone.to_panel() {
+                    use objc::{msg_send, sel, sel_impl};
+
+                    panel.set_level(1001);
+                    panel.set_style_mask(128);
+                    panel.set_hides_on_deactivate(false);
+
+                    // Exclude from screen capture (NSWindowSharingNone = 0)
+                    let _: () = unsafe { msg_send![&*panel, setSharingType: 0_u64] };
+
+                    panel.set_collection_behaviour(
+                        NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
+                            | NSWindowCollectionBehavior::NSWindowCollectionBehaviorIgnoresCycle
+                            | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary,
+                    );
+                    panel.order_front_regardless();
+                    info!("Notification panel configured for all-Spaces fullscreen support");
+                } else {
+                    error!("Failed to get notification panel in main thread");
+                }
+            });
+        } else {
+            error!("Failed to convert notification-panel to panel");
+            let _ = window.show();
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = window.show();
+    }
+
+    // Wait for webview to mount React and register event listeners before emitting
+    let app_clone = app_handle.clone();
+    let payload_clone = payload.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        info!("Emitting notification-panel-update event");
+        let _ = app_clone.emit_to("notification-panel", "notification-panel-update", &payload_clone);
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn hide_notification_panel(app_handle: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("notification-panel") {
         let _ = window.hide();
     }
     Ok(())
