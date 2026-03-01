@@ -11,7 +11,7 @@ use tracing::{debug, error, warn};
 use crate::transcription::engine::{TranscriptionEngine, TranscriptionSession};
 use crate::transcription::{AudioInsertCallback, AudioInsertInfo};
 use crate::core::engine::AudioTranscriptionEngine;
-use crate::transcription::stt::stt;
+
 use crate::OpenAICompatibleConfig;
 use crate::transcription::VocabularyEntry;
 use crate::utils::ffmpeg::read_audio_from_file;

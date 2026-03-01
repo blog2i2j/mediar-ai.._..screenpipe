@@ -8,6 +8,7 @@ use reqwest::{Client, Response, multipart};
 use screenpipe_core::Language;
 use serde_json::Value;
 use std::io::Cursor;
+use std::time::Duration;
 use tracing::{debug, error, info};
 
 /// Transcribe audio using an OpenAI-compatible API endpoint.
@@ -40,8 +41,10 @@ pub async fn transcribe_with_openai_compatible(
     // Create a WAV file in memory
     let wav_data = create_wav_file(audio_data, sample_rate)?;
 
-    // Build the request
-    let client = Client::new();
+    // Build the request (with timeout to prevent hanging on unresponsive endpoints)
+    let client = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()?;
     
     // Build multipart form
     let mut form = multipart::Form::new()

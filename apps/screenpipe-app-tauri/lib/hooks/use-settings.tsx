@@ -112,6 +112,12 @@ export type Settings = SettingsStore & {
 	cloudArchiveRetentionDays?: number;
 	/** Sync pipe configurations across devices (requires cloud sync subscription) */
 	pipeSyncEnabled?: boolean;
+	/** OpenAI-compatible transcription endpoint URL */
+	openaiCompatibleEndpoint?: string;
+	/** OpenAI-compatible transcription API key */
+	openaiCompatibleApiKey?: string;
+	/** OpenAI-compatible transcription model name */
+	openaiCompatibleModel?: string;
 }
 
 export function getEffectiveFilters(settings: Settings) {

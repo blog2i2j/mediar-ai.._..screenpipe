@@ -520,11 +520,11 @@ export function RecordingSettings() {
   // Fetch models when OpenAI Compatible is selected and endpoint changes
   useEffect(() => {
     if (settings.audioTranscriptionEngine === 'openai-compatible') {
-      const endpoint = (settings as any).openaiCompatibleEndpoint || 'http://127.0.0.1:8080';
-      const apiKey = (settings as any).openaiCompatibleApiKey;
+      const endpoint = settings.openaiCompatibleEndpoint || 'http://127.0.0.1:8080';
+      const apiKey = settings.openaiCompatibleApiKey;
       fetchOpenAIModels(endpoint, apiKey);
     }
-  }, [settings.audioTranscriptionEngine, (settings as any).openaiCompatibleEndpoint, (settings as any).openaiCompatibleApiKey, fetchOpenAIModels]);
+  }, [settings.audioTranscriptionEngine, settings.openaiCompatibleEndpoint, settings.openaiCompatibleApiKey, fetchOpenAIModels]);
 
   // Enhanced validation for specific fields
   const validateDeepgramApiKey = useCallback((apiKey: string): FieldValidationResult => {
@@ -1143,8 +1143,8 @@ Your screen is a pipe. Everything you see, hear, and type flows through it. Scre
                 <ValidatedInput
                   id="openaiCompatibleEndpoint"
                   label=""
-                  value={(settings as any).openaiCompatibleEndpoint || "http://127.0.0.1:8080"}
-                  onChange={(value: string) => handleSettingsChange({ openaiCompatibleEndpoint: value } as any, true)}
+                  value={settings.openaiCompatibleEndpoint || "http://127.0.0.1:8080"}
+                  onChange={(value: string) => handleSettingsChange({ openaiCompatibleEndpoint: value }, true)}
                   placeholder="API Endpoint (e.g., http://127.0.0.1:8080)"
                   className="h-7 text-xs"
                 />
@@ -1155,8 +1155,8 @@ Your screen is a pipe. Everything you see, hear, and type flows through it. Scre
                     id="openaiCompatibleApiKey"
                     label=""
                     type={showOpenAIApiKey ? "text" : "password"}
-                    value={(settings as any).openaiCompatibleApiKey || ""}
-                    onChange={(value: string) => handleSettingsChange({ openaiCompatibleApiKey: value } as any, true)}
+                    value={settings.openaiCompatibleApiKey || ""}
+                    onChange={(value: string) => handleSettingsChange({ openaiCompatibleApiKey: value }, true)}
                     placeholder="API Key (optional)"
                     className="pr-8 h-7 text-xs"
                   />
@@ -1177,18 +1177,26 @@ Your screen is a pipe. Everything you see, hear, and type flows through it. Scre
                 
                 {/* Model Selection */}
                 <Select
-                  value={(settings as any).openaiCompatibleModel || ""}
-                  onValueChange={(value) => handleSettingsChange({ openaiCompatibleModel: value } as any, true)}
+                  value={settings.openaiCompatibleModel || ""}
+                  onValueChange={(value) => handleSettingsChange({ openaiCompatibleModel: value }, true)}
+                  disabled={openAIModels.length === 0 || openAIModels.includes('!API_Error')}
                 >
                   <SelectTrigger className="w-full h-7 text-xs">
-                    <SelectValue placeholder={isLoadingModels ? "Loading models..." : "Select model"} />
+                    <SelectValue placeholder={
+                      isLoadingModels ? "Loading models..." :
+                      openAIModels.includes('!API_Error') ? "Failed to connect to API" :
+                      "Select model"
+                    } />
                   </SelectTrigger>
                   <SelectContent>
-                    {openAIModels.map((model) => (
+                    {openAIModels.filter(m => m !== '!API_Error').map((model) => (
                       <SelectItem key={model} value={model}>{model}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {openAIModels.includes('!API_Error') && (
+                  <p className="text-xs text-destructive">Could not reach the API endpoint. Check the URL and try again.</p>
+                )}
                 {filterTranscriptionModels && openAIModels.length === 0 && allOpenAIModels.length > 0 && (
                   <p className="text-xs text-muted-foreground">No transcription models found. Toggle off the filter to see all models.</p>
                 )}

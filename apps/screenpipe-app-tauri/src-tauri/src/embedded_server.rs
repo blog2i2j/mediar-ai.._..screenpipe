@@ -155,8 +155,6 @@ pub async fn start_embedded_server(
 
     // Build audio manager
     use screenpipe_audio::core::engine::AudioTranscriptionEngine;
-    use screenpipe_audio::vad::VadEngineEnum;
-    use screenpipe_audio::audio_manager::AudioManagerBuilder;
     use screenpipe_audio::transcription::stt::OpenAICompatibleConfig;
     
     // Build OpenAI Compatible config if applicable
