@@ -1871,14 +1871,19 @@ impl DatabaseManager {
 
         match content_type {
             ContentType::All => {
+                // For All: each sub-function must fetch enough rows to cover the
+                // global pagination window. We pass limit+offset with offset=0 to
+                // each, then apply skip(offset).take(limit) once on the merged set.
+                let fetch_limit = limit.saturating_add(offset);
+
                 let (ocr_results, audio_results, ui_results) =
                     if app_name.is_none() && window_name.is_none() && frame_name.is_none() {
                         // Run all three queries in parallel
                         let (ocr, audio, ui) = tokio::try_join!(
                             self.search_ocr(
                                 query,
-                                limit,
-                                offset,
+                                fetch_limit,
+                                0,
                                 start_time,
                                 end_time,
                                 app_name,
@@ -1891,8 +1896,8 @@ impl DatabaseManager {
                             ),
                             self.search_audio(
                                 query,
-                                limit,
-                                offset,
+                                fetch_limit,
+                                0,
                                 start_time,
                                 end_time,
                                 min_length,
@@ -1906,8 +1911,8 @@ impl DatabaseManager {
                                 window_name,
                                 start_time,
                                 end_time,
-                                limit,
-                                offset,
+                                fetch_limit,
+                                0,
                             )
                         )?;
                         (ocr, Some(audio), ui)
@@ -1916,8 +1921,8 @@ impl DatabaseManager {
                         let (ocr, ui) = tokio::try_join!(
                             self.search_ocr(
                                 query,
-                                limit,
-                                offset,
+                                fetch_limit,
+                                0,
                                 start_time,
                                 end_time,
                                 app_name,
@@ -1934,8 +1939,8 @@ impl DatabaseManager {
                                 window_name,
                                 start_time,
                                 end_time,
-                                limit,
-                                offset,
+                                fetch_limit,
+                                0,
                             )
                         )?;
                         (ocr, None, ui)
@@ -2031,6 +2036,16 @@ impl DatabaseManager {
             };
             timestamp_b.cmp(&timestamp_a)
         });
+
+        // For ContentType::All, sub-functions each fetched limit+offset rows
+        // with offset=0. Now apply pagination once on the globally-sorted set.
+        if matches!(content_type, ContentType::All) {
+            results = results
+                .into_iter()
+                .skip(offset as usize)
+                .take(limit as usize)
+                .collect();
+        }
 
         Ok(results)
     }
