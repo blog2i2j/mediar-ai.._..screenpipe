@@ -1454,8 +1454,8 @@ export function StandaloneChat({ className }: { className?: string } = {}) {
   // Track previous preset to detect changes
   const prevPresetRef = useRef<{ provider?: string; model?: string; token?: string | null }>({});
 
-  // Update Pi config when user switches preset — no restart, just update config files.
-  // Pi picks up the new provider/model on the next prompt.
+  // Restart Pi when user switches preset so the new model takes effect immediately.
+  // Pi uses CLI args from startup, so config-only updates don't change the running model.
   useEffect(() => {
     if (!activePreset) return;
     const prev = prevPresetRef.current;
@@ -1467,9 +1467,9 @@ export function StandaloneChat({ className }: { className?: string } = {}) {
     if (!presetChanged && !tokenChanged) return;
 
     const providerConfig = buildProviderConfig();
-    console.log("[Pi] Config updated (no restart):", providerConfig?.provider, providerConfig?.model);
+    console.log("[Pi] Preset changed, restarting:", providerConfig?.provider, providerConfig?.model);
     commands.piUpdateConfig(settings.user?.token ?? null, providerConfig).catch((e) => {
-      console.error("[Pi] Config update failed:", e);
+      console.error("[Pi] Preset switch failed:", e);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePreset?.provider, activePreset?.model, settings.user?.token]);

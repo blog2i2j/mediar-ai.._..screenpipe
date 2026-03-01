@@ -114,15 +114,35 @@ impl PiExecutor {
         Ok(())
     }
 
-    /// Ensure the web-search extension exists in `project_dir/.pi/extensions/`.
-    pub fn ensure_web_search_extension(project_dir: &Path) -> Result<()> {
+    /// Install or remove the web-search extension based on provider.
+    /// Web search uses the screenpipe cloud backend, so we only enable it
+    /// for screenpipe-cloud to avoid sending data to our backend when the
+    /// user chose a local/custom provider.
+    pub fn ensure_web_search_extension(
+        project_dir: &Path,
+        provider: Option<&str>,
+    ) -> Result<()> {
         let ext_dir = project_dir.join(".pi").join("extensions");
         let ext_path = ext_dir.join("web-search.ts");
 
-        std::fs::create_dir_all(&ext_dir)?;
-        let ext_content = include_str!("../../assets/extensions/web-search.ts");
-        std::fs::write(&ext_path, ext_content)?;
-        debug!("web-search extension installed at {:?}", ext_path);
+        let is_screenpipe_cloud = matches!(
+            provider,
+            None | Some("screenpipe") | Some("screenpipe-cloud") | Some("pi")
+        );
+
+        if is_screenpipe_cloud {
+            std::fs::create_dir_all(&ext_dir)?;
+            let ext_content = include_str!("../../assets/extensions/web-search.ts");
+            std::fs::write(&ext_path, ext_content)?;
+            debug!("web-search extension installed at {:?}", ext_path);
+        } else if ext_path.exists() {
+            std::fs::remove_file(&ext_path)?;
+            info!(
+                "web-search extension removed (provider {:?} is not screenpipe-cloud)",
+                provider
+            );
+        }
+
         Ok(())
     }
 
@@ -558,15 +578,16 @@ impl AgentExecutor for PiExecutor {
             provider_url,
         )?;
         Self::ensure_screenpipe_skill(working_dir)?;
-        Self::ensure_web_search_extension(working_dir)?;
-
-        let pi_path = find_pi_executable()
-            .ok_or_else(|| anyhow!("pi not found. install with: bun add -g {}", PI_PACKAGE))?;
 
         // Provider resolution:
         // 1. Explicit provider from pipe frontmatter → use it
         // 2. No provider specified → screenpipe cloud (default)
         let resolved_provider = provider.unwrap_or("screenpipe").to_string();
+
+        Self::ensure_web_search_extension(working_dir, Some(&resolved_provider))?;
+
+        let pi_path = find_pi_executable()
+            .ok_or_else(|| anyhow!("pi not found. install with: bun add -g {}", PI_PACKAGE))?;
         let resolved_model = Self::resolve_model(model, &resolved_provider);
 
         info!(
@@ -641,7 +662,7 @@ impl AgentExecutor for PiExecutor {
             provider_url,
         )?;
         Self::ensure_screenpipe_skill(working_dir)?;
-        Self::ensure_web_search_extension(working_dir)?;
+        Self::ensure_web_search_extension(working_dir, Some(&resolved_provider))?;
 
         let pi_path = find_pi_executable()
             .ok_or_else(|| anyhow!("pi not found. install with: bun add -g {}", PI_PACKAGE))?;

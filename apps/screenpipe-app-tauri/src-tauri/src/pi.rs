@@ -361,20 +361,46 @@ fn ensure_screenpipe_skill(project_dir: &str) -> Result<(), String> {
 }
 
 /// Ensure the web-search extension exists in the project's .pi/extensions directory
-fn ensure_web_search_extension(project_dir: &str) -> Result<(), String> {
+/// Install or remove the web-search extension based on provider.
+/// Web search uses the screenpipe cloud backend (Gemini + Google Search),
+/// so we only enable it for screenpipe-cloud presets to avoid sending
+/// user data to our backend when they chose a local/custom provider.
+fn ensure_web_search_extension(
+    project_dir: &str,
+    provider_config: Option<&PiProviderConfig>,
+) -> Result<(), String> {
     let ext_dir = std::path::Path::new(project_dir)
         .join(".pi")
         .join("extensions");
     let ext_path = ext_dir.join("web-search.ts");
 
-    std::fs::create_dir_all(&ext_dir)
-        .map_err(|e| format!("Failed to create extensions dir: {}", e))?;
+    let is_screenpipe_cloud = match provider_config {
+        Some(config) => matches!(
+            config.provider.as_str(),
+            "screenpipe-cloud" | "pi"
+        ),
+        None => true, // default preset = screenpipe cloud
+    };
 
-    let ext_content = include_str!("../assets/extensions/web-search.ts");
-    std::fs::write(&ext_path, ext_content)
-        .map_err(|e| format!("Failed to write web-search extension: {}", e))?;
+    if is_screenpipe_cloud {
+        std::fs::create_dir_all(&ext_dir)
+            .map_err(|e| format!("Failed to create extensions dir: {}", e))?;
 
-    debug!("Web search extension installed at {:?}", ext_path);
+        let ext_content = include_str!("../assets/extensions/web-search.ts");
+        std::fs::write(&ext_path, ext_content)
+            .map_err(|e| format!("Failed to write web-search extension: {}", e))?;
+
+        debug!("Web search extension installed at {:?}", ext_path);
+    } else if ext_path.exists() {
+        std::fs::remove_file(&ext_path)
+            .map_err(|e| format!("Failed to remove web-search extension: {}", e))?;
+
+        info!(
+            "Web search extension removed (provider {:?} is not screenpipe-cloud)",
+            provider_config.map(|c| &c.provider)
+        );
+    }
+
     Ok(())
 }
 
@@ -696,8 +722,8 @@ pub async fn pi_start_inner(
     // Ensure screenpipe-search skill exists in project
     ensure_screenpipe_skill(&project_dir)?;
 
-    // Ensure web-search extension exists in project
-    ensure_web_search_extension(&project_dir)?;
+    // Install web-search extension only for screenpipe-cloud presets
+    ensure_web_search_extension(&project_dir, provider_config.as_ref())?;
 
     // Ensure Pi is configured with the user's provider
     ensure_pi_config(user_token.as_deref(), provider_config.as_ref())?;
@@ -1118,20 +1144,33 @@ pub async fn pi_check() -> Result<PiCheckResult, String> {
     })
 }
 
-/// Update Pi config files (models.json / auth.json) without restarting the process.
-/// Call this when the user changes preset — Pi picks up the new config on next prompt.
+/// Update Pi config and restart the chat session so the new model takes effect.
+/// Without restart, Pi keeps using the provider/model from its original CLI args.
 #[tauri::command]
 #[specta::specta]
 pub async fn pi_update_config(
+    app: AppHandle,
+    state: State<'_, PiState>,
     user_token: Option<String>,
     provider_config: Option<PiProviderConfig>,
 ) -> Result<(), String> {
-    ensure_pi_config(user_token.as_deref(), provider_config.as_ref())?;
     info!(
-        "Pi config updated (provider: {:?}, model: {:?})",
+        "Pi preset changed (provider: {:?}, model: {:?}) — restarting chat session",
         provider_config.as_ref().map(|c| &c.provider),
         provider_config.as_ref().map(|c| &c.model),
     );
+
+    // Resolve the chat project directory
+    let home = dirs::home_dir().ok_or("could not resolve home directory")?;
+    let project_dir = home
+        .join(".screenpipe")
+        .join("pi-chat")
+        .to_string_lossy()
+        .to_string();
+
+    // Restart Pi for the "chat" session with the new provider/model
+    pi_start_inner(app, &state, "chat", project_dir, user_token, provider_config).await?;
+
     Ok(())
 }
 
