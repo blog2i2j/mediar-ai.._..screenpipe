@@ -549,6 +549,18 @@ fn handle_menu_event(app_handle: &AppHandle, event: tauri::menu::MenuEvent) {
                         debug!("No recording running to stop");
                     }
                 }
+                info!("All tasks stopped, exiting process");
+                // Use _exit() instead of exit() to skip C++ atexit/static destructors.
+                // The whisper/ggml Metal GPU context registers a global destructor that
+                // asserts during teardown (ggml_metal_rsets_free), causing SIGABRT.
+                // We've already done our own cleanup above, so atexit handlers have
+                // nothing useful left to do.
+                #[cfg(unix)]
+                {
+                    extern "C" { fn _exit(status: i32) -> !; }
+                    unsafe { _exit(0); }
+                }
+                #[cfg(not(unix))]
                 app_handle_clone.exit(0);
             });
         }
