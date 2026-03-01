@@ -11,6 +11,7 @@ import { TextOverlay, extractUrlsFromText, isUrl, normalizeUrl } from "@/compone
 import { SelectableTextLayer, getSelectableLayerText, clearSelectableLayerSelection } from "@/components/selectable-text-layer";
 import { RegionOcrOverlay } from "@/components/rewind/region-ocr-overlay";
 import { useSearchHighlight } from "@/lib/hooks/use-search-highlight";
+import { useSettings } from "@/lib/hooks/use-settings";
 import { ImageOff, ChevronLeft, ChevronRight, Copy, ImageIcon, Link2, MessageCircle, ExternalLink, Type, Zap } from "lucide-react";
 import { usePipes, type TemplatePipe } from "@/lib/hooks/use-pipes";
 import posthog from "posthog-js";
@@ -106,6 +107,7 @@ export const CurrentFrameTimeline: FC<CurrentFrameTimelineProps> = ({
 	adjacentFrames,
 }) => {
 	const { isMac } = usePlatform();
+	const { settings } = useSettings();
 	const { templatePipes } = usePipes();
 	const { highlightTerms, dismissed: highlightDismissed, clear: clearHighlight } = useSearchHighlight();
 	const [isLoading, setIsLoading] = useState(true);
@@ -976,12 +978,15 @@ export const CurrentFrameTimeline: FC<CurrentFrameTimelineProps> = ({
 				</div>
 			)}
 
-			{/* Shift+drag region OCR — always mount so shift key listener is active */}
-			<RegionOcrOverlay
-				frameId={debouncedFrame?.frameId ?? null}
-				renderedImageInfo={renderedImageInfo}
-				naturalDimensions={naturalDimensions}
-			/>
+			{/* Shift+drag region OCR */}
+			{!isLoading && !hasError && renderedImageInfo && naturalDimensions && debouncedFrame?.frameId && (
+				<RegionOcrOverlay
+					frameId={debouncedFrame.frameId}
+					renderedImageInfo={renderedImageInfo}
+					naturalDimensions={naturalDimensions}
+					userToken={settings.user?.token ?? null}
+				/>
+			)}
 
 			{/* URL chips — bottom of frame, when no OCR TextOverlay is showing */}
 			{!isLoading && !hasError && textPositions.length === 0 && detectedUrls.length > 0 && (
