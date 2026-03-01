@@ -279,6 +279,13 @@ jobs:
           Write-Host "ONNX Runtime extracted to $extractDir"
           Get-ChildItem "$extractDir/lib" | ForEach-Object { Write-Host $_.Name }
 
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1.0.5
+        with:
+          vulkan_version: latest
+          install_runtime: false
+          cache: true
+
       - name: Shorten target dir to avoid MAX_PATH (Vulkan shaders)
         shell: powershell
         run: |

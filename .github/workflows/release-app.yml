@@ -286,6 +286,14 @@ jobs:
         with:
           ref: ${{ github.event.inputs.commit_hash || github.ref }}
 
+      - name: Install Vulkan SDK (Windows)
+        if: matrix.os_type == 'windows'
+        uses: jakoch/install-vulkan-sdk-action@v1.0.5
+        with:
+          vulkan_version: latest
+          install_runtime: false
+          cache: true
+
       - name: Shorten target dir to avoid MAX_PATH (Windows)
         if: matrix.os_type == 'windows'
         shell: powershell

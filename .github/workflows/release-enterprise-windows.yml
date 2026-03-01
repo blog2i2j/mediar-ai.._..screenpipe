@@ -23,6 +23,13 @@ jobs:
           git config --global core.longpaths true
           if ((git config --global --get core.longpaths) -ne "true") { throw "Failed to enable git long paths" }
 
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1.0.5
+        with:
+          vulkan_version: latest
+          install_runtime: false
+          cache: true
+
       - name: Shorten target dir to avoid MAX_PATH
         shell: powershell
         run: |
